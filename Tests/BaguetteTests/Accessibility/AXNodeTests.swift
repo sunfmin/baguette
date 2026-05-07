@@ -80,6 +80,47 @@ struct AXNodeTests {
         #expect((dict["children"] as? [Any])?.isEmpty == true)
     }
 
+    // Real-world: AppKit / AX hands back a frame with an infinite or NaN
+    // dimension for offscreen / unrealised elements (Word's complex
+    // toolbar tree triggers this). Without sanitisation
+    // `JSONSerialization` throws NSInvalidArgumentException("Invalid
+    // number value (infinite) in JSON write") and the entire
+    // describe-ui call SIGABRTs.
+    @Test func `json substitutes 0 for non-finite frame dimensions`() throws {
+        let node = AXNode(
+            role: "AXScrollBar",
+            frame: Rect(
+                origin: Point(x: .infinity, y: -.infinity),
+                size: Size(width: .nan, height: 100)
+            )
+        )
+        let dict = try parseJSON(node.json)
+        let frame = dict["frame"] as? [String: Any]
+        #expect(frame?["x"] as? Double == 0)
+        #expect(frame?["y"] as? Double == 0)
+        #expect(frame?["width"] as? Double == 0)
+        #expect(frame?["height"] as? Double == 100)
+    }
+
+    @Test func `json sanitises non-finite frames in nested children`() throws {
+        // The crash we saw in the wild was in a deep child, not the
+        // root — confirm the sanitisation walks the whole tree.
+        let badLeaf = AXNode(
+            role: "AXScrollBar",
+            frame: Rect(
+                origin: Point(x: -.infinity, y: 0),
+                size: Size(width: 0, height: 0)
+            )
+        )
+        let parent = AXNode(
+            role: "AXWindow",
+            frame: Rect(origin: Point(x: 0, y: 0), size: Size(width: 1000, height: 800)),
+            children: [badLeaf]
+        )
+        // The whole tree must serialise without throwing.
+        _ = try parseJSON(parent.json)
+    }
+
     @Test func `json omits absent optional strings as null`() throws {
         let node = AXNode(
             role: "AXGroup",

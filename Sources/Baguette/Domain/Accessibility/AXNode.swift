@@ -181,15 +181,26 @@ struct AXNode: Equatable, Sendable {
             "title":      title as Any? ?? NSNull(),
             "help":       help as Any? ?? NSNull(),
             "frame": [
-                "x":      frame.origin.x,
-                "y":      frame.origin.y,
-                "width":  frame.size.width,
-                "height": frame.size.height,
+                "x":      AXNode.jsonSafe(frame.origin.x),
+                "y":      AXNode.jsonSafe(frame.origin.y),
+                "width":  AXNode.jsonSafe(frame.size.width),
+                "height": AXNode.jsonSafe(frame.size.height),
             ],
             "enabled":  enabled,
             "focused":  focused,
             "hidden":   hidden,
             "children": children.map(\.dictionary),
         ]
+    }
+
+    /// JSONSerialization throws `NSInvalidArgumentException` on `infinity`
+    /// or `NaN` doubles — neither is representable in JSON. AppKit/AX can
+    /// hand back a frame with an infinite dimension for offscreen or
+    /// unrealised elements (Word's complex toolbar / scrollbar tree is
+    /// the case we hit in practice). Substitute 0 so the projection
+    /// never crashes; the in-memory `frame` keeps whatever AX returned
+    /// for callers that want to introspect.
+    private static func jsonSafe(_ d: Double) -> Double {
+        d.isFinite ? d : 0
     }
 }
